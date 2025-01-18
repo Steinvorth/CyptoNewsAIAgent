@@ -163,6 +163,35 @@ News content: {content}"""
             "summary": self._generate_summary(all_insights),
         }
 
+    def discover_trending_coins(self) -> Dict:
+        """
+        Discover trending coins and news by searching for general crypto news.
+        """
+        query = "cryptocurrency (meme coin OR altcoin OR trending coin)"
+        news = self.search_crypto_news(query, num_results=10)
+
+        all_insights = []
+        for article in news:
+            if article["url"] not in self.seen_articles:  # Avoid duplicates
+                self.seen_articles.add(article["url"])
+                analysis = self.analyze_with_llm(article.get("content", ""))
+                if analysis:
+                    all_insights.append(
+                        {
+                            "title": article.get("title"),
+                            "url": article.get("url"),
+                            "timestamp": datetime.now().isoformat(),
+                            "analysis": analysis,
+                        }
+                    )
+
+        return {
+            "discovery_timestamp": datetime.now().isoformat(),
+            "total_articles": len(all_insights),
+            "insights": all_insights,
+            "summary": self._generate_summary(all_insights),
+        }
+
     def _generate_summary(self, insights: List[Dict]) -> Dict:
         """Generate summary of all insights"""
         if not insights:

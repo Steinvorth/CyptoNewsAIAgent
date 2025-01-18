@@ -48,5 +48,14 @@ def search_crypto():
     return jsonify(news)
 
 
+@app.route("/api/discover", methods=["GET"])
+def discover_trending_coins():
+    """
+    Discover trending coins and news by searching for general crypto news.
+    """
+    insights = analyzer.discover_trending_coins()
+    return jsonify(insights)
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
