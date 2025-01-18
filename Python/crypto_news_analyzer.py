@@ -1,6 +1,5 @@
 import requests
 from typing import List, Dict
-import json
 from datetime import datetime
 import time
 
@@ -15,6 +14,7 @@ class CryptoNewsAnalyzer:
         self.llm_endpoint = llm_endpoint
         self.searxng_url = searxng_url
         self.model_name = model_name
+        self.seen_articles = set()  # Track seen articles to avoid duplicates
 
     def test_llm_connection(self) -> bool:
         """Test LLM connection and model availability"""
@@ -113,17 +113,18 @@ News content: {content}"""
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
         }
 
-        # Enhanced search parameters
+        # Simplified search parameters
         params = {
-            "q": f"{query} cryptocurrency (price OR market OR trading OR analysis) date:month",
+            "q": f"{query} cryptocurrency",
             "format": "json",
-            "category_news": "true",
-            "time_range": "month",
-            "sort": "date",
             "results": num_results,
         }
 
+        print(f"Searching SearxNG with query: {query}")  # Debugging
         response = requests.get(self.searxng_url, headers=headers, params=params)
+        print(f"Response status code: {response.status_code}")  # Debugging
+        print(f"Response content: {response.text}")  # Debugging
+
         if response.status_code == 200:
             return response.json().get("results", [])
         return []
@@ -141,16 +142,18 @@ News content: {content}"""
         for query in search_queries:
             news = self.search_crypto_news(query, num_results=3)
             for article in news:
-                analysis = self.analyze_with_llm(article.get("content", ""))
-                if analysis:
-                    all_insights.append(
-                        {
-                            "title": article.get("title"),
-                            "url": article.get("url"),
-                            "timestamp": datetime.now().isoformat(),
-                            "analysis": analysis,
-                        }
-                    )
+                if article["url"] not in self.seen_articles:  # Avoid duplicates
+                    self.seen_articles.add(article["url"])
+                    analysis = self.analyze_with_llm(article.get("content", ""))
+                    if analysis:
+                        all_insights.append(
+                            {
+                                "title": article.get("title"),
+                                "url": article.get("url"),
+                                "timestamp": datetime.now().isoformat(),
+                                "analysis": analysis,
+                            }
+                        )
 
         return {
             "cryptocurrency": cryptocurrency,
@@ -190,17 +193,3 @@ News content: {content}"""
             "average_impact": round(avg_impact, 2),
             "analysis_count": len(insights),
         }
-
-
-def main():
-    analyzer = CryptoNewsAnalyzer(
-        llm_endpoint="http://127.0.0.1:1234/v1/completions",  # Updated LM Studio endpoint
-        searxng_url="http://132.145.130.5:8080/search",  # Your SearxNG instance
-    )
-
-    results = analyzer.get_crypto_insights("Bitcoin")
-    print(json.dumps(results, indent=2))
-
-
-if __name__ == "__main__":
-    main()
