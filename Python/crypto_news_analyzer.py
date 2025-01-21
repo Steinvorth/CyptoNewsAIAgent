@@ -182,6 +182,8 @@ News content: {content}"""
         }
 
     def discover_trending_coins(self, ignore_evaluation: bool = False) -> Dict:
+        promising_coins = {}  # Dict to store coin data and aggregated analysis
+
         queries = [
             "viral crypto token trending social media",
             "new cryptocurrency listing pump",
@@ -195,27 +197,142 @@ News content: {content}"""
             news = self.search_crypto_news(query, num_results=5)
 
             for article in news:
-                print(f"\n{Fore.CYAN}Analyzing Content:{Style.RESET_ALL}")
-                print(article.get("content")[:300])
-
-                coin_prompt = """
-                As a crypto analyst, examine this text and identify any mentioned cryptocurrencies.
-                Focus on:
-                - Newly trending tokens
-                - Viral meme coins
-                - Tokens with significant price movement
-                - Highly discussed crypto projects
-                
-                Return ONLY the coin names with brief reason why each is trending.
-                Format: COINNAME: reason
+                # First, extract coin names
+                coin_extraction_prompt = """
+                Analyze this text and extract cryptocurrency names.
+                Format each finding as: SYMBOL: FULL_NAME
+                Example: "DOGE: Dogecoin"
+                Focus on finding the exact trading symbol and full name.
+                Only include coins that are specifically mentioned with clear identifiers.
                 If no specific coins found, return 'None'
-                
+
                 Text: {content}
                 """.format(
-                    content=article.get("content")
+                    content=f"{article.get('title')} {article.get('content')}"
                 )
 
-                # Rest of the code remains the same...
+                try:
+                    response = requests.post(
+                        f"{self.llm_endpoint}/v1/chat/completions",
+                        json={
+                            "model": self.model_name,
+                            "messages": [
+                                {"role": "user", "content": coin_extraction_prompt}
+                            ],
+                            "temperature": 0.3,
+                        },
+                    )
+
+                    coins_text = response.json()["choices"][0]["message"][
+                        "content"
+                    ].strip()
+                    if coins_text.lower() != "none":
+                        # For each identified coin, perform detailed analysis
+                        for coin_entry in coins_text.split("\n"):
+                            if ":" in coin_entry:
+                                symbol, name = coin_entry.split(":", 1)
+                                symbol = symbol.strip()
+                                name = name.strip()
+
+                                # Perform detailed analysis for this specific coin
+                                analysis_prompt = f"""
+                                Analyze this cryptocurrency: {symbol} ({name})
+                                Context: {article.get('content')}
+
+                                Provide detailed analysis:
+                                1. SENTIMENT: Rate market sentiment (Very Bearish/Bearish/Neutral/Bullish/Very Bullish)
+                                2. IMPACT: Rate potential market impact (1-10)
+                                3. KEY POINTS: List main points about this specific coin
+                                4. RECOMMENDATION: Clear trading/investment recommendation
+                                5. CONFIDENCE: Rate analysis confidence (1-10)
+                                6. EVALUATION: Should we monitor this coin? (Yes/No)
+                                7. REASON: Specific reasons to monitor or avoid this coin
+                                8. RISK_LEVEL: Rate investment risk (Low/Medium/High)
+                                9. MARKET_CAP: Mention if discussed
+                                10. TRADING_VOLUME: Mention if discussed
+                                """
+
+                                analysis = self.analyze_with_llm(analysis_prompt)
+
+                                # Store or update coin analysis
+                                if symbol not in promising_coins:
+                                    promising_coins[symbol] = {
+                                        "symbol": symbol,
+                                        "name": name,
+                                        "analyses": [],
+                                        "total_impact": 0,
+                                        "total_confidence": 0,
+                                        "mentions": 0,
+                                    }
+
+                                promising_coins[symbol]["analyses"].append(analysis)
+                                promising_coins[symbol]["mentions"] += 1
+                                promising_coins[symbol]["total_impact"] += float(
+                                    analysis.get("impact", 0)
+                                )
+                                promising_coins[symbol]["total_confidence"] += float(
+                                    analysis.get("confidence", 0)
+                                )
+
+                                # Print analysis report
+                                is_promising = (
+                                    analysis.get("evaluation", "").lower() == "yes"
+                                    and float(analysis.get("impact", 0)) >= 7
+                                    and float(analysis.get("confidence", 0)) >= 6
+                                )
+                                self._print_analysis_report(
+                                    f"{symbol} ({name})", analysis, is_promising
+                                )
+
+                except Exception as e:
+                    print(
+                        f"{Fore.RED}Error analyzing article: {str(e)}{Style.RESET_ALL}"
+                    )
+
+        # Final analysis and storage
+        final_candidates = []
+        for symbol, data in promising_coins.items():
+            if data["mentions"] >= 2:  # Require multiple mentions
+                avg_impact = data["total_impact"] / data["mentions"]
+                avg_confidence = data["total_confidence"] / data["mentions"]
+
+                if avg_impact >= 7 and avg_confidence >= 6:
+                    best_analysis = max(
+                        data["analyses"], key=lambda x: float(x.get("impact", 0))
+                    )
+                    self.store_coin_in_supabase(data["symbol"], best_analysis)
+                    final_candidates.append(
+                        {
+                            "symbol": data["symbol"],
+                            "name": data["name"],
+                            "avg_impact": avg_impact,
+                            "avg_confidence": avg_confidence,
+                            "mentions": data["mentions"],
+                            "best_analysis": best_analysis,
+                        }
+                    )
+
+        # Print final summary
+        print("\n" + "=" * 80)
+        print(f"{Fore.GREEN}FINAL ANALYSIS SUMMARY{Style.RESET_ALL}")
+        print("=" * 80)
+        print(f"Total coins analyzed: {len(promising_coins)}")
+        print(f"Final candidates selected: {len(final_candidates)}")
+
+        for candidate in final_candidates:
+            print(
+                f"\n{Fore.YELLOW}{candidate['symbol']}{Style.RESET_ALL} ({candidate['name']})"
+            )
+            print(f"Average Impact: {candidate['avg_impact']:.2f}/10")
+            print(f"Average Confidence: {candidate['avg_confidence']:.2f}/10")
+            print(f"Total Mentions: {candidate['mentions']}")
+            print(f"Key Points: {candidate['best_analysis'].get('key_points', [])}")
+
+        return {
+            "discovery_timestamp": datetime.now().isoformat(),
+            "coins_analyzed": len(promising_coins),
+            "promising_candidates": final_candidates,
+        }
 
     def store_coin_in_supabase(self, coin_name: str, analysis: Dict) -> None:
         """Store a coin in the Supabase database if it's worth monitoring."""
