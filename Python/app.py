@@ -8,6 +8,8 @@ app = Flask(__name__)
 analyzer = CryptoNewsAnalyzer(
     llm_endpoint="http://127.0.0.1:1234/v1/completions",  # Updated LM Studio endpoint
     searxng_url="http://132.145.130.5:8080/search",  # Your SearxNG instance
+    supabase_url="https://ejrtiiqnprwzmyzoemjh.supabase.co",  # Supabase URL
+    supabase_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqcnRpaXFucHJ3em15em9lbWpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzcyMjk5ODYsImV4cCI6MjA1MjgwNTk4Nn0.io8MKZAlmuAGKBMBd_PbpxIpD5y4ztRV2wcJowLVd4Y",  # Supabase anon key
 )
 
 
@@ -48,14 +50,20 @@ def search_crypto():
     return jsonify(news)
 
 
+# Using the API endpoint
 @app.route("/api/discover", methods=["GET"])
-def discover_trending_coins():
-    """
-    Discover trending coins and news by searching for general crypto news.
-    """
-    insights = analyzer.discover_trending_coins()
-    return jsonify(insights)
+@app.route("/api/discover/<eval_mode>", methods=["GET"])
+def discover_trending_coins(eval_mode=None):
+    try:
+        print(f"Received discover request with eval_mode: {eval_mode}")  # Debug logging
+        ignore_evaluation = eval_mode == "false"
+        insights = analyzer.discover_trending_coins(ignore_evaluation=ignore_evaluation)
+        print(f"Generated insights: {insights}")  # Debug logging
+        return jsonify(insights)
+    except Exception as e:
+        print(f"Error in discover_trending_coins: {str(e)}")  # Error logging
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001, host="0.0.0.0")  # Enable external access
