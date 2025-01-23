@@ -43,109 +43,116 @@ class CryptoNewsAnalyzer:
             return False
 
     def analyze_with_llm(self, content: str) -> Dict:
-        """Enhanced LLM analysis with structured output"""
-        prompt = """Analyze this crypto news as an expert analyst. Provide:
-1. SENTIMENT: Rate market sentiment (Very Bearish, Bearish, Neutral, Bullish, Very Bullish)
-2. IMPACT: Rate potential market impact (1-10)
-3. KEY POINTS: List main points affecting the crypto market
-4. RECOMMENDATION: Provide trading suggestion
-5. CONFIDENCE: Rate analysis confidence (1-10)
-6. EVALUATION: Based on the information, should we monitor this coin? (Yes/No)
-7. REASON: Explain why we should or should not monitor this coin.
+        """Fixed LLM analysis"""
+        try:
+            prompt = """
+            Analyze this crypto content and extract key information:
+            {content}
 
-News content: {content}"""
+            Return analysis in this EXACT format:
+            COINS_MENTIONED: List all cryptocurrency symbols mentioned (Example: DOGE, SHIB)
+            SENTIMENT: (Very Bearish/Bearish/Neutral/Bullish/Very Bullish)
+            IMPACT: (1-10)
+            KEY_POINTS:
+            - point 1
+            - point 2
+            RECOMMENDATION: (Buy/Sell/Hold/Watch)
+            CONFIDENCE: (1-10)
+            EVALUATION: (Yes/No)
+            REASON: (Brief explanation)
+            """
 
-        payload = {
-            "model": self.model_name,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a professional crypto market analyst focused on accurate, data-driven analysis.",
+            response = requests.post(
+                f"{self.llm_endpoint}/v1/chat/completions",
+                json={
+                    "model": self.model_name,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are a professional crypto analyst.",
+                        },
+                        {"role": "user", "content": prompt.format(content=content)},
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 500,
                 },
-                {"role": "user", "content": prompt.format(content=content)},
-            ],
-            "temperature": 0.7,
-            "max_tokens": 800,
-        }
-
-        response = requests.post(
-            f"{self.llm_endpoint}/v1/chat/completions", json=payload
-        )
-        if response.status_code == 200:
-            analysis = (
-                response.json()
-                .get("choices", [{}])[0]
-                .get("message", {})
-                .get("content", "")
             )
-            return self._parse_analysis(analysis)
-        return {}
+
+            if response.status_code == 200:
+                result = response.json()
+                if "choices" in result and len(result["choices"]) > 0:
+                    analysis = result["choices"][0]["message"]["content"]
+                    return self._parse_analysis(analysis)
+
+            print(f"{Fore.RED}LLM API Error: {response.text}{Style.RESET_ALL}")
+            return {}
+
+        except Exception as e:
+            print(f"{Fore.RED}Error in analyze_with_llm: {str(e)}{Style.RESET_ALL}")
+            return {}
 
     def _parse_analysis(self, analysis: str) -> Dict:
-        """Parse LLM analysis into structured format"""
-        return {
-            "sentiment": (
-                analysis.split("SENTIMENT:")[1].split("\n")[0].strip()
-                if "SENTIMENT:" in analysis
-                else "Unknown"
-            ),
-            "impact": (
-                analysis.split("IMPACT:")[1].split("\n")[0].strip()
-                if "IMPACT:" in analysis
-                else "0"
-            ),
-            "key_points": (
-                analysis.split("KEY POINTS:")[1]
-                .split("RECOMMENDATION:")[0]
-                .strip()
-                .split("\n")
-                if "KEY POINTS:" in analysis
-                else []
-            ),
-            "recommendation": (
-                analysis.split("RECOMMENDATION:")[1].split("CONFIDENCE:")[0].strip()
-                if "RECOMMENDATION:" in analysis
-                else ""
-            ),
-            "confidence": (
-                analysis.split("CONFIDENCE:")[1].strip()
-                if "CONFIDENCE:" in analysis
-                else "0"
-            ),
-            "evaluation": (
-                analysis.split("EVALUATION:")[1].split("\n")[0].strip()
-                if "EVALUATION:" in analysis
-                else "No"
-            ),
-            "reason": (
-                analysis.split("REASON:")[1].strip() if "REASON:" in analysis else ""
-            ),
-            "raw_analysis": analysis,
-        }
+        """Enhanced analysis parser"""
+        try:
+            coins_mentioned = []
+            if "COINS_MENTIONED:" in analysis:
+                coins_section = (
+                    analysis.split("COINS_MENTIONED:")[1].split("\n")[0].strip()
+                )
+                coins_mentioned = [coin.strip() for coin in coins_section.split(",")]
+
+            return {
+                "coins_mentioned": coins_mentioned,
+                "sentiment": self._extract_field(analysis, "SENTIMENT:"),
+                "impact": self._extract_field(analysis, "IMPACT:"),
+                "key_points": self._extract_list(analysis, "KEY_POINTS:"),
+                "recommendation": self._extract_field(analysis, "RECOMMENDATION:"),
+                "confidence": self._extract_field(analysis, "CONFIDENCE:"),
+                "evaluation": self._extract_field(analysis, "EVALUATION:"),
+                "reason": self._extract_field(analysis, "REASON:"),
+                "raw_analysis": analysis,
+            }
+        except Exception as e:
+            print(f"{Fore.RED}Error parsing analysis: {str(e)}{Style.RESET_ALL}")
+            return {}
+
+    def _extract_field(self, text: str, field: str) -> str:
+        """Helper to extract fields from analysis"""
+        try:
+            if field in text:
+                return text.split(field)[1].split("\n")[0].strip()
+            return ""
+        except:
+            return ""
+
+    def _extract_list(self, text: str, field: str) -> List[str]:
+        """Helper to extract lists from analysis"""
+        try:
+            if field in text:
+                section = text.split(field)[1].split("\n\n")[0]
+                return [
+                    point.strip("- ").strip()
+                    for point in section.split("\n")
+                    if point.strip()
+                ]
+            return []
+        except:
+            return []
 
     def search_crypto_news(self, query: str, num_results: int = 10) -> List[Dict]:
-        """Enhanced search with trending focus"""
+        """Enhanced search with broader sources"""
         headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
 
-        # More targeted search parameters
+        # Add more crypto news sources
         params = {
-            "q": f"{query} -bitcoin -ethereum site:twitter.com OR site:reddit.com/r/cryptocurrency OR site:coinmarketcap.com/gainers-losers",
+            "q": f"{query} -bitcoin -ethereum site:twitter.com OR site:reddit.com/r/cryptocurrency OR site:coinmarketcap.com OR site:cryptonews.com OR site:cointelegraph.com OR site:decrypt.co OR site:coindesk.com",
             "format": "json",
             "results": num_results,
-            "time_range": "day",  # Focus on very recent mentions
+            "time_range": "day",
         }
 
         print(f"\n{Fore.CYAN}Searching with query:{Style.RESET_ALL} {params['q']}")
-        response = requests.get(self.searxng_url, headers=headers, params=params)
-
-        if response.status_code == 200:
-            results = response.json().get("results", [])
-            for result in results:
-                print(f"\n{Fore.YELLOW}Found Article:{Style.RESET_ALL}")
-                print(f"Title: {result.get('title')}")
-                print(f"Content: {result.get('content')[:200]}...")
-            return results
-        return []
+        return self._make_search_request(headers, params)
 
     def get_crypto_insights(self, cryptocurrency: str) -> Dict:
         """Get comprehensive crypto analysis"""

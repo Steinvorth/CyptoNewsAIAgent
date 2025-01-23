@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # Initialize the analyzer
 analyzer = CryptoNewsAnalyzer(
-    llm_endpoint="http://127.0.0.1:1234/v1/completions",  # Updated LM Studio endpoint
+    llm_endpoint="http://127.0.0.1:1234/v1/chat/completions",  # Updated endpoint
     searxng_url="http://132.145.130.5:8080/search",  # Your SearxNG instance
     supabase_url="https://ejrtiiqnprwzmyzoemjh.supabase.co",  # Supabase URL
     supabase_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqcnRpaXFucHJ3em15em9lbWpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzcyMjk5ODYsImV4cCI6MjA1MjgwNTk4Nn0.io8MKZAlmuAGKBMBd_PbpxIpD5y4ztRV2wcJowLVd4Y",  # Supabase anon key
